@@ -4,11 +4,9 @@
 #include <Backups/BackupCoordinationReplicatedAccess.h>
 #include <Backups/BackupCoordinationReplicatedTables.h>
 #include <Backups/BackupCoordinationStageSync.h>
+#include <Backups/BackupSettings.h>
 #include <Storages/MergeTree/ZooKeeperRetries.h>
-<<<<<<< HEAD
-=======
-#include "Core/Types.h"
->>>>>>> First try
+#include <Core/Types.h>
 
 
 namespace DB
@@ -88,9 +86,11 @@ private:
     void prepareReplicatedAccess() const;
 
     const BackupKeeperSettings keeper_settings;
+    const String backup_uuid;
     const String root_zookeeper_path;
     const String zookeeper_path;
-    const String backup_uuid;
+    const String current_host;
+
     const zkutil::GetZooKeeper get_zookeeper;
     const bool is_internal;
 

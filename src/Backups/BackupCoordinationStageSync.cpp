@@ -19,7 +19,8 @@ namespace ErrorCodes
 
 
 BackupCoordinationStageSync::BackupCoordinationStageSync(CoordinationSettings settings_, zkutil::GetZooKeeper get_zookeeper_, Poco::Logger * log_)
-    : zookeeper_path(settings_.root_zookeeper_path + "/stage")
+    : coordination_settings(settings_)
+    , zookeeper_path(settings_.root_zookeeper_path + "/stage")
     , get_zookeeper(get_zookeeper_)
     , log(log_)
 {
@@ -50,11 +51,6 @@ void BackupCoordinationStageSync::set(const String & current_host, const String 
     {
         auto zookeeper = get_zookeeper();
 
-        /// Make an ephemeral node so the initiator can track if the current host is still working.
-        String alive_node_path = zookeeper_path + "/alive|" + current_host;
-        /// FIXME: alive_node_path should be ephemeral to determine whether the replica is dead or not
-        /// But since we retry all the operations we cannot rely on it.
-        zookeeper->createIfNotExists(alive_node_path, "");
         zookeeper->createIfNotExists(zookeeper_path + "/started|" + current_host, "");
         zookeeper->createIfNotExists(zookeeper_path + "/current|" + current_host + "|" + new_stage, message);
     });
@@ -120,8 +116,20 @@ BackupCoordinationStageSync::State BackupCoordinationStageSync::readCurrentState
         if (!zk_nodes_set.contains("current|" + host + "|" + stage_to_wait))
         {
             UnreadyHostState unready_host_state;
-            unready_host_state.started = zk_nodes_set.contains("started|" + host);
-            unready_host_state.alive = zk_nodes_set.contains("alive|" + host);
+            const String started_node_name = "started|" + host;
+            const String alive_node_name = "alive|" + host;
+            const String alive_node_path = zookeeper_path + "/" + alive_node_name;
+            unready_host_state.started = zk_nodes_set.contains(started_node_name);
+            unready_host_state.alive = true;
+            if (zk_nodes_set.contains(alive_node_name))
+            {
+                Coordination::Stat stat;
+                zookeeper->get(alive_node_path, &stat);
+                const auto now = static_cast<UInt64>(time(nullptr));
+                const auto mtime_seconds = stat.mtime / 1000;
+                if (mtime_seconds + coordination_settings.timeout_to_consider_replica_as_dead_seconds < now)
+                    unready_host_state.alive = false;
+            }
             state.unready_hosts.emplace(host, unready_host_state);
             if (!unready_host_state.alive && unready_host_state.started && !state.host_terminated)
                 state.host_terminated = host;

@@ -176,7 +176,7 @@ BackupCoordinationRemote::BackupCoordinationRemote(
     , zookeeper_path(root_zookeeper_path_ + "/backup-" + backup_uuid_)
     , backup_uuid(backup_uuid_)
     , get_zookeeper(get_zookeeper_)
-    , is_internal(is_internal_)
+    , is_internal(backup_settings.internal)
 {
     zookeeper_retries_info = ZooKeeperRetriesInfo(
         "BackupCoordinationRemote",
@@ -221,6 +221,11 @@ zkutil::ZooKeeperPtr BackupCoordinationRemote::getZooKeeperNoLock() const
         /// so we may read a bit stale state.
         zookeeper->sync(zookeeper_path);
     }
+
+    /// Update the mtime of this node.
+    String alive_node_path = zookeeper_path + "/alive|" + current_host;
+    zookeeper->createIfNotExists(alive_node_path, "");
+    zookeeper->set(alive_node_path, "");
     return zookeeper;
 }
 
@@ -259,12 +264,12 @@ void BackupCoordinationRemote::removeAllNodes()
 }
 
 
-void BackupCoordinationRemote::setStage(const String & current_host, const String & new_stage, const String & message)
+void BackupCoordinationRemote::setStage(const String &, const String & new_stage, const String & message)
 {
     stage_sync->set(current_host, new_stage, message);
 }
 
-void BackupCoordinationRemote::setError(const String & current_host, const Exception & exception)
+void BackupCoordinationRemote::setError(const String &, const Exception & exception)
 {
     stage_sync->setError(current_host, exception);
 }

@@ -40,16 +40,12 @@ namespace
 {
     std::shared_ptr<IBackupCoordination> makeBackupCoordination(std::optional<BackupCoordinationRemote::BackupKeeperSettings> keeper_settings, String & root_zk_path, const String & backup_uuid, const ContextPtr & context, bool is_internal_backup)
     {
-        if (!settings.root_zookeeper_path.empty())
+        if (!root_zk_path.empty())
         {
             if (!keeper_settings.has_value())
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Parameter keeper_settings is empty while root_zk_path is not. This is bug");
             auto get_zookeeper = [global_context = context->getGlobalContext()] { return global_context->getZooKeeper(); };
-<<<<<<< HEAD
             return std::make_shared<BackupCoordinationRemote>(*keeper_settings, root_zk_path, backup_uuid, get_zookeeper, is_internal_backup);
-=======
-            return std::make_shared<BackupCoordinationRemote>(settings, backup_uuid, get_zookeeper, is_internal_backup);
->>>>>>> First try
         }
         else
         {
@@ -298,20 +294,7 @@ void BackupsWorker::doBackup(
 
         /// Make a backup coordination.
         if (!backup_coordination)
-<<<<<<< HEAD
             backup_coordination = makeBackupCoordination(keeper_settings, root_zk_path, toString(*backup_settings.backup_uuid), context, backup_settings.internal);
-=======
-        {
-            BackupCoordinationStageSync::CoordinationSettings settings
-            {
-                .root_zookeeper_path = root_zk_path,
-                .max_retries = context->getSettingsRef().backup_keeper_max_retries,
-                .initial_backoff_ms = context->getSettingsRef().backup_keeper_retry_initial_backoff_ms,
-                .max_backoff_ms = context->getSettingsRef().backup_keeper_retry_max_backoff_ms,
-            };
-            backup_coordination = makeBackupCoordination(settings, toString(*backup_settings.backup_uuid), context, backup_settings.internal);
-        }
->>>>>>> Save
 
         if (!allow_concurrent_backups && backup_coordination->hasConcurrentBackups(std::ref(num_active_backups)))
             throw Exception(ErrorCodes::CONCURRENT_ACCESS_NOT_SUPPORTED, "Concurrent backups not supported, turn on setting 'allow_concurrent_backups'");
@@ -440,6 +423,7 @@ OperationID BackupsWorker::startRestoring(const ASTPtr & query, ContextMutablePt
             .max_retries = context->getSettingsRef().backup_keeper_max_retries,
             .initial_backoff_ms = context->getSettingsRef().backup_keeper_retry_initial_backoff_ms,
             .max_backoff_ms = context->getSettingsRef().backup_keeper_retry_max_backoff_ms,
+            .timeout_to_consider_replica_as_dead_seconds = context->getSettingsRef().backup_timeout_to_consider_replica_as_dead_seconds,
         };
         restore_coordination = makeRestoreCoordination(settings, toString(*restore_settings.restore_uuid), context, restore_settings.internal);
     }
@@ -566,6 +550,7 @@ void BackupsWorker::doRestore(
             .max_retries = context->getSettingsRef().backup_keeper_max_retries,
             .initial_backoff_ms = context->getSettingsRef().backup_keeper_retry_initial_backoff_ms,
             .max_backoff_ms = context->getSettingsRef().backup_keeper_retry_max_backoff_ms,
+            .timeout_to_consider_replica_as_dead_seconds = context->getSettingsRef().backup_timeout_to_consider_replica_as_dead_seconds,
         };
 
         /// Make a restore coordination.

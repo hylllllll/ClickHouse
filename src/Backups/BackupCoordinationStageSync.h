@@ -18,6 +18,7 @@ public:
         UInt64 max_retries;
         UInt64 initial_backoff_ms;
         UInt64 max_backoff_ms;
+        UInt64 timeout_to_consider_replica_as_dead_seconds;
     };
 
     BackupCoordinationStageSync(CoordinationSettings settings_, zkutil::GetZooKeeper get_zookeeper_, Poco::Logger * log_);
@@ -41,6 +42,7 @@ private:
 
     Strings waitImpl(const Strings & all_hosts, const String & stage_to_wait, std::optional<std::chrono::milliseconds> timeout) const;
 
+    CoordinationSettings coordination_settings;
     mutable ZooKeeperRetriesInfo zookeeper_retries_info;
     String zookeeper_path;
     zkutil::GetZooKeeper get_zookeeper;

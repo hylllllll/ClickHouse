@@ -903,7 +903,7 @@ def test_stop_other_host_during_backup(kill):
     backup_name = new_backup_name()
 
     id = node1.query(
-        f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name} ASYNC"
+        f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name} SETTINGS backup_timeout_to_consider_replica_as_dead_seconds ASYNC"
     ).split("\t")[0]
 
     # If kill=False the pending backup must be completed
