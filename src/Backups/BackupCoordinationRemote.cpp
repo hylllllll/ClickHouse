@@ -185,6 +185,8 @@ BackupCoordinationRemote::BackupCoordinationRemote(
         keeper_settings.keeper_retry_initial_backoff_ms,
         keeper_settings.keeper_retry_max_backoff_ms);
 
+    settings.root_zookeeper_path = zookeeper_path;
+
     createRootNodes();
     stage_sync.emplace(
         settings, [this] { return getZooKeeper(); }, &Poco::Logger::get("BackupCoordination"));

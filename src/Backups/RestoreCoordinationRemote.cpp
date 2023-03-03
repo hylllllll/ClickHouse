@@ -19,6 +19,8 @@ RestoreCoordinationRemote::RestoreCoordinationRemote(
 {
     createRootNodes();
 
+    settings.root_zookeeper_path = zookeeper_path;
+
     stage_sync.emplace(
         settings, [this] { return getZooKeeper(); }, &Poco::Logger::get("RestoreCoordination"));
 }
