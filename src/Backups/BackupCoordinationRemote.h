@@ -31,6 +31,7 @@ public:
         const String & backup_uuid_,
         zkutil::GetZooKeeper get_zookeeper_,
         bool is_internal_);
+
     ~BackupCoordinationRemote() override;
 
     void setStage(const String & current_host, const String & new_stage, const String & message) override;

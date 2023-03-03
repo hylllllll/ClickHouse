@@ -1,6 +1,7 @@
 #include <Backups/BackupCoordinationStageSync.h>
 #include <Common/Exception.h>
 #include <Common/ZooKeeper/KeeperException.h>
+#include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
@@ -17,42 +18,60 @@ namespace ErrorCodes
 }
 
 
-BackupCoordinationStageSync::BackupCoordinationStageSync(const String & zookeeper_path_, zkutil::GetZooKeeper get_zookeeper_, Poco::Logger * log_)
-    : zookeeper_path(zookeeper_path_)
+BackupCoordinationStageSync::BackupCoordinationStageSync(CoordinationSettings settings_, zkutil::GetZooKeeper get_zookeeper_, Poco::Logger * log_)
+    : zookeeper_path(settings_.root_zookeeper_path + "/stage")
     , get_zookeeper(get_zookeeper_)
     , log(log_)
 {
+    zookeeper_retries_info = ZooKeeperRetriesInfo(
+        "BackupCoordinationStageSync",
+        log,
+        settings_.max_retries,
+        settings_.initial_backoff_ms,
+        settings_.max_backoff_ms);
     createRootNodes();
 }
 
 void BackupCoordinationStageSync::createRootNodes()
 {
-    auto zookeeper = get_zookeeper();
-    zookeeper->createAncestors(zookeeper_path);
-    zookeeper->createIfNotExists(zookeeper_path, "");
+    ZooKeeperRetriesControl retries_ctl("createRootNodes", zookeeper_retries_info);
+    retries_ctl.retryLoop([&]()
+    {
+        auto zookeeper = get_zookeeper();
+        zookeeper->createAncestors(zookeeper_path);
+        zookeeper->createIfNotExists(zookeeper_path, "");
+    });
 }
 
 void BackupCoordinationStageSync::set(const String & current_host, const String & new_stage, const String & message)
 {
-    auto zookeeper = get_zookeeper();
+    ZooKeeperRetriesControl retries_ctl("set", zookeeper_retries_info);
+    retries_ctl.retryLoop([&]()
+    {
+        auto zookeeper = get_zookeeper();
 
-    /// Make an ephemeral node so the initiator can track if the current host is still working.
-    String alive_node_path = zookeeper_path + "/alive|" + current_host;
-    auto code = zookeeper->tryCreate(alive_node_path, "", zkutil::CreateMode::Ephemeral);
-    if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNODEEXISTS)
-        throw zkutil::KeeperException(code, alive_node_path);
+        /// Make an ephemeral node so the initiator can track if the current host is still working.
+        String alive_node_path = zookeeper_path + "/alive|" + current_host;
+        auto code = zookeeper->tryCreate(alive_node_path, "", zkutil::CreateMode::Ephemeral);
+        if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNODEEXISTS)
+            throw zkutil::KeeperException(code, alive_node_path);
 
-    zookeeper->createIfNotExists(zookeeper_path + "/started|" + current_host, "");
-    zookeeper->create(zookeeper_path + "/current|" + current_host + "|" + new_stage, message, zkutil::CreateMode::Persistent);
+        zookeeper->createIfNotExists(zookeeper_path + "/started|" + current_host, "");
+        zookeeper->createIfNotExists(zookeeper_path + "/current|" + current_host + "|" + new_stage, message);
+    });
 }
 
 void BackupCoordinationStageSync::setError(const String & current_host, const Exception & exception)
 {
-    auto zookeeper = get_zookeeper();
-    WriteBufferFromOwnString buf;
-    writeStringBinary(current_host, buf);
-    writeException(exception, buf, true);
-    zookeeper->createIfNotExists(zookeeper_path + "/error", buf.str());
+    ZooKeeperRetriesControl retries_ctl("setError", zookeeper_retries_info);
+    retries_ctl.retryLoop([&]()
+    {
+        auto zookeeper = get_zookeeper();
+        WriteBufferFromOwnString buf;
+        writeStringBinary(current_host, buf);
+        writeException(exception, buf, true);
+        zookeeper->createIfNotExists(zookeeper_path + "/error", buf.str());
+    });
 }
 
 Strings BackupCoordinationStageSync::wait(const Strings & all_hosts, const String & stage_to_wait)
@@ -127,8 +146,6 @@ Strings BackupCoordinationStageSync::waitImpl(const Strings & all_hosts, const S
 
     /// Wait until all hosts are ready or an error happens or time is out.
 
-    auto zookeeper = get_zookeeper();
-
     /// Set by ZooKepper when list of zk nodes have changed.
     auto watch = std::make_shared<Poco::Event>();
 
@@ -141,39 +158,45 @@ Strings BackupCoordinationStageSync::waitImpl(const Strings & all_hosts, const S
 
     String previous_unready_host; /// Used for logging: we don't want to log the same unready host again.
 
-    for (;;)
+    ZooKeeperRetriesControl retries_ctl("waitImpl", zookeeper_retries_info);
+    retries_ctl.retryLoop([&]()
     {
-        /// Get zk nodes and subscribe on their changes.
-        Strings zk_nodes = zookeeper->getChildren(zookeeper_path, nullptr, watch);
-
-        /// Read and analyze the current state of zk nodes.
-        state = readCurrentState(zookeeper, zk_nodes, all_hosts, stage_to_wait);
-        if (state.error || state.host_terminated || state.unready_hosts.empty())
-            break; /// Error happened or everything is ready.
-
-        /// Log that we will wait for another host.
-        const auto & unready_host = state.unready_hosts.begin()->first;
-        if (unready_host != previous_unready_host)
+        auto zookeeper = get_zookeeper();
+        for (;;)
         {
-            LOG_TRACE(log, "Waiting for host {}", unready_host);
-            previous_unready_host = unready_host;
-        }
+            /// Get zk nodes and subscribe on their changes.
+            Strings zk_nodes = zookeeper->getChildren(zookeeper_path, nullptr, watch);
 
-        /// Wait until `watch_callback` is called by ZooKeeper meaning that zk nodes have changed.
-        {
-            if (use_timeout)
+            /// Read and analyze the current state of zk nodes.
+            state = readCurrentState(zookeeper, zk_nodes, all_hosts, stage_to_wait);
+            if (state.error || state.host_terminated || state.unready_hosts.empty())
+                break; /// Error happened or everything is ready.
+
+            /// Log that we will wait for another host.
+            const auto & unready_host = state.unready_hosts.begin()->first;
+            if (unready_host != previous_unready_host)
             {
-                auto current_time = std::chrono::steady_clock::now();
-                if ((current_time > end_of_timeout)
-                    || !watch->tryWait(std::chrono::duration_cast<std::chrono::milliseconds>(end_of_timeout - current_time).count()))
-                    break;
+                LOG_TRACE(log, "Waiting for host {}", unready_host);
+                previous_unready_host = unready_host;
             }
-            else
+
+            /// Wait until `watch_callback` is called by ZooKeeper meaning that zk nodes have changed.
             {
-                watch->wait();
+                if (use_timeout)
+                {
+                    auto current_time = std::chrono::steady_clock::now();
+                    if ((current_time > end_of_timeout)
+                        || !watch->tryWait(std::chrono::duration_cast<std::chrono::milliseconds>(end_of_timeout - current_time).count()))
+                        break;
+                }
+                else
+                {
+                    watch->wait();
+                }
             }
         }
     }
+
 
     /// Rethrow an error raised originally on another host.
     if (state.error)

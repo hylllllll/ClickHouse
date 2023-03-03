@@ -40,7 +40,7 @@ namespace
 {
     std::shared_ptr<IBackupCoordination> makeBackupCoordination(std::optional<BackupCoordinationRemote::BackupKeeperSettings> keeper_settings, String & root_zk_path, const String & backup_uuid, const ContextPtr & context, bool is_internal_backup)
     {
-        if (!root_zk_path.empty())
+        if (!settings.root_zookeeper_path.empty())
         {
             if (!keeper_settings.has_value())
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Parameter keeper_settings is empty while root_zk_path is not. This is bug");
@@ -294,7 +294,20 @@ void BackupsWorker::doBackup(
 
         /// Make a backup coordination.
         if (!backup_coordination)
+<<<<<<< HEAD
             backup_coordination = makeBackupCoordination(keeper_settings, root_zk_path, toString(*backup_settings.backup_uuid), context, backup_settings.internal);
+=======
+        {
+            BackupCoordinationStageSync::CoordinationSettings settings
+            {
+                .root_zookeeper_path = root_zk_path,
+                .max_retries = context->getSettingsRef().backup_keeper_max_retries,
+                .initial_backoff_ms = context->getSettingsRef().backup_keeper_retry_initial_backoff_ms,
+                .max_backoff_ms = context->getSettingsRef().backup_keeper_retry_max_backoff_ms,
+            };
+            backup_coordination = makeBackupCoordination(settings, toString(*backup_settings.backup_uuid), context, backup_settings.internal);
+        }
+>>>>>>> Save
 
         if (!allow_concurrent_backups && backup_coordination->hasConcurrentBackups(std::ref(num_active_backups)))
             throw Exception(ErrorCodes::CONCURRENT_ACCESS_NOT_SUPPORTED, "Concurrent backups not supported, turn on setting 'allow_concurrent_backups'");

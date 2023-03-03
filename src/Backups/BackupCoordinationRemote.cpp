@@ -187,7 +187,7 @@ BackupCoordinationRemote::BackupCoordinationRemote(
 
     createRootNodes();
     stage_sync.emplace(
-        zookeeper_path + "/stage", [this] { return getZooKeeper(); }, &Poco::Logger::get("BackupCoordination"));
+        settings, [this] { return getZooKeeper(); }, &Poco::Logger::get("BackupCoordination"));
 }
 
 BackupCoordinationRemote::~BackupCoordinationRemote()

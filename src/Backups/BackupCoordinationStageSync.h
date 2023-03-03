@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/ZooKeeper/Common.h>
+#include "Storages/MergeTree/ZooKeeperRetries.h"
 
 
 namespace DB
@@ -10,7 +11,16 @@ namespace DB
 class BackupCoordinationStageSync
 {
 public:
-    BackupCoordinationStageSync(const String & zookeeper_path_, zkutil::GetZooKeeper get_zookeeper_, Poco::Logger * log_);
+    struct CoordinationSettings
+    {
+        String root_zookeeper_path;
+        /// For ZooKeeper retries
+        UInt64 max_retries;
+        UInt64 initial_backoff_ms;
+        UInt64 max_backoff_ms;
+    };
+
+    BackupCoordinationStageSync(CoordinationSettings settings_, zkutil::GetZooKeeper get_zookeeper_, Poco::Logger * log_);
 
     /// Sets the stage of the current host and signal other hosts if there were other hosts waiting for that.
     void set(const String & current_host, const String & new_stage, const String & message);
@@ -31,6 +41,7 @@ private:
 
     Strings waitImpl(const Strings & all_hosts, const String & stage_to_wait, std::optional<std::chrono::milliseconds> timeout) const;
 
+    mutable ZooKeeperRetriesInfo zookeeper_retries_info;
     String zookeeper_path;
     zkutil::GetZooKeeper get_zookeeper;
     Poco::Logger * log;
