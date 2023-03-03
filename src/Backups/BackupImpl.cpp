@@ -533,6 +533,8 @@ void BackupImpl::createLockFile()
     /// Internal backup must not create the lock file (it should be created by the initiator).
     assert(!is_internal_backup);
 
+    LOG_TRACE(log,"Writing lock file (path: {})", lock_file_name);
+
     assert(uuid);
     auto out = writer->writeFile(lock_file_name);
     writeUUIDText(*uuid, *out);

@@ -11,7 +11,7 @@ namespace DB
 class RestoreCoordinationRemote : public IRestoreCoordination
 {
 public:
-    RestoreCoordinationRemote(const String & root_zookeeper_path_, const String & restore_uuid_, zkutil::GetZooKeeper get_zookeeper_, bool is_internal_);
+    RestoreCoordinationRemote(BackupCoordinationStageSync::CoordinationSettings settings, const String & restore_uuid_, zkutil::GetZooKeeper get_zookeeper_, bool is_internal_);
     ~RestoreCoordinationRemote() override;
 
     /// Sets the current stage and waits for other hosts to come to this stage too.

@@ -10,9 +10,9 @@ namespace DB
 namespace Stage = BackupCoordinationStage;
 
 RestoreCoordinationRemote::RestoreCoordinationRemote(
-    const String & root_zookeeper_path_, const String & restore_uuid_, zkutil::GetZooKeeper get_zookeeper_, bool is_internal_)
-    : root_zookeeper_path(root_zookeeper_path_)
-    , zookeeper_path(root_zookeeper_path_ + "/restore-" + restore_uuid_)
+    BackupCoordinationStageSync::CoordinationSettings settings, const String & restore_uuid_, zkutil::GetZooKeeper get_zookeeper_, bool is_internal_)
+    : root_zookeeper_path(settings.root_zookeeper_path)
+    , zookeeper_path(settings.root_zookeeper_path + "/restore-" + restore_uuid_)
     , restore_uuid(restore_uuid_)
     , get_zookeeper(get_zookeeper_)
     , is_internal(is_internal_)
@@ -20,7 +20,7 @@ RestoreCoordinationRemote::RestoreCoordinationRemote(
     createRootNodes();
 
     stage_sync.emplace(
-        zookeeper_path + "/stage", [this] { return getZooKeeper(); }, &Poco::Logger::get("RestoreCoordination"));
+        settings, [this] { return getZooKeeper(); }, &Poco::Logger::get("RestoreCoordination"));
 }
 
 RestoreCoordinationRemote::~RestoreCoordinationRemote()

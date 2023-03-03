@@ -5,6 +5,10 @@
 #include <Backups/BackupCoordinationReplicatedTables.h>
 #include <Backups/BackupCoordinationStageSync.h>
 #include <Storages/MergeTree/ZooKeeperRetries.h>
+<<<<<<< HEAD
+=======
+#include "Core/Types.h"
+>>>>>>> First try
 
 
 namespace DB

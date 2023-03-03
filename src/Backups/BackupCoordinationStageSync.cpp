@@ -52,10 +52,9 @@ void BackupCoordinationStageSync::set(const String & current_host, const String 
 
         /// Make an ephemeral node so the initiator can track if the current host is still working.
         String alive_node_path = zookeeper_path + "/alive|" + current_host;
-        auto code = zookeeper->tryCreate(alive_node_path, "", zkutil::CreateMode::Ephemeral);
-        if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNODEEXISTS)
-            throw zkutil::KeeperException(code, alive_node_path);
-
+        /// FIXME: alive_node_path should be ephemeral to determine whether the replica is dead or not
+        /// But since we retry all the operations we cannot rely on it.
+        zookeeper->createIfNotExists(alive_node_path, "");
         zookeeper->createIfNotExists(zookeeper_path + "/started|" + current_host, "");
         zookeeper->createIfNotExists(zookeeper_path + "/current|" + current_host + "|" + new_stage, message);
     });
@@ -195,8 +194,7 @@ Strings BackupCoordinationStageSync::waitImpl(const Strings & all_hosts, const S
                 }
             }
         }
-    }
-
+    });
 
     /// Rethrow an error raised originally on another host.
     if (state.error)

@@ -45,7 +45,11 @@ namespace
             if (!keeper_settings.has_value())
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Parameter keeper_settings is empty while root_zk_path is not. This is bug");
             auto get_zookeeper = [global_context = context->getGlobalContext()] { return global_context->getZooKeeper(); };
+<<<<<<< HEAD
             return std::make_shared<BackupCoordinationRemote>(*keeper_settings, root_zk_path, backup_uuid, get_zookeeper, is_internal_backup);
+=======
+            return std::make_shared<BackupCoordinationRemote>(settings, backup_uuid, get_zookeeper, is_internal_backup);
+>>>>>>> First try
         }
         else
         {
@@ -53,12 +57,12 @@ namespace
         }
     }
 
-    std::shared_ptr<IRestoreCoordination> makeRestoreCoordination(const String & root_zk_path, const String & restore_uuid, const ContextPtr & context, bool is_internal_backup)
+    std::shared_ptr<IRestoreCoordination> makeRestoreCoordination(BackupCoordinationStageSync::CoordinationSettings settings, const String & restore_uuid, const ContextPtr & context, bool is_internal_backup)
     {
-        if (!root_zk_path.empty())
+        if (!settings.root_zookeeper_path.empty())
         {
             auto get_zookeeper = [global_context = context->getGlobalContext()] { return global_context->getZooKeeper(); };
-            return std::make_shared<RestoreCoordinationRemote>(root_zk_path, restore_uuid, get_zookeeper, is_internal_backup);
+            return std::make_shared<RestoreCoordinationRemote>(settings, restore_uuid, get_zookeeper, is_internal_backup);
         }
         else
         {
@@ -430,8 +434,14 @@ OperationID BackupsWorker::startRestoring(const ASTPtr & query, ContextMutablePt
         /// The following call of makeRestoreCoordination() is not essential because doRestore() will later create a restore coordination
         /// if it's not created here. However to handle errors better it's better to make a coordination here because this way
         /// if an exception will be thrown in startRestoring() other hosts will know about that.
-        auto root_zk_path = context->getConfigRef().getString("backups.zookeeper_path", "/clickhouse/backups");
-        restore_coordination = makeRestoreCoordination(root_zk_path, toString(*restore_settings.restore_uuid), context, restore_settings.internal);
+        BackupCoordinationStageSync::CoordinationSettings settings
+        {
+            .root_zookeeper_path = context->getConfigRef().getString("backups.zookeeper_path", "/clickhouse/backups"),
+            .max_retries = context->getSettingsRef().backup_keeper_max_retries,
+            .initial_backoff_ms = context->getSettingsRef().backup_keeper_retry_initial_backoff_ms,
+            .max_backoff_ms = context->getSettingsRef().backup_keeper_retry_max_backoff_ms,
+        };
+        restore_coordination = makeRestoreCoordination(settings, toString(*restore_settings.restore_uuid), context, restore_settings.internal);
     }
 
     try
@@ -550,9 +560,17 @@ void BackupsWorker::doRestore(
             }
         }
 
+        BackupCoordinationStageSync::CoordinationSettings settings
+        {
+            .root_zookeeper_path = root_zk_path,
+            .max_retries = context->getSettingsRef().backup_keeper_max_retries,
+            .initial_backoff_ms = context->getSettingsRef().backup_keeper_retry_initial_backoff_ms,
+            .max_backoff_ms = context->getSettingsRef().backup_keeper_retry_max_backoff_ms,
+        };
+
         /// Make a restore coordination.
         if (!restore_coordination)
-            restore_coordination = makeRestoreCoordination(root_zk_path, toString(*restore_settings.restore_uuid), context, restore_settings.internal);
+            restore_coordination = makeRestoreCoordination(settings, toString(*restore_settings.restore_uuid), context, restore_settings.internal);
 
         if (!allow_concurrent_restores && restore_coordination->hasConcurrentRestores(std::ref(num_active_restores)))
             throw Exception(ErrorCodes::CONCURRENT_ACCESS_NOT_SUPPORTED, "Concurrent restores not supported, turn on setting 'allow_concurrent_restores'");
