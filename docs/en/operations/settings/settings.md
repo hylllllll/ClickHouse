@@ -1425,6 +1425,17 @@ Possible values:
 
 Default value: `0`
 
+## query_cache_squash_partial_query_results {#query-cache-squash-partial-query-results}
+
+Write a single concatenated block into the [query cache](../query-cache.md) for partial query results instead of multiple blocks. Lessens memory consumption of the query cache at the cost of slower inserts into it.
+
+Possible values:
+
+- 0 - Disabled
+- 1 - Enabled
+
+Default value: `0`
+
 ## query_cache_ttl {#query-cache-ttl}
 
 After this time in seconds entries in the [query cache](../query-cache.md) become stale.

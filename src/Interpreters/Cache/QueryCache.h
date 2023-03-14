@@ -109,12 +109,14 @@ public:
         const size_t max_entry_size_in_rows;
         const std::chrono::time_point<std::chrono::system_clock> query_start_time = std::chrono::system_clock::now(); /// Writer construction and finalizeWrite() coincide with query start/end
         const std::chrono::milliseconds min_query_runtime;
+        const bool squash_partial_query_results;
         std::shared_ptr<QueryResult> query_result TSA_GUARDED_BY(mutex) = std::make_shared<QueryResult>();
         std::atomic<bool> skip_insert = false;
 
         Writer(Cache & cache_, const Key & key_,
             size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_,
-            std::chrono::milliseconds min_query_runtime_);
+            std::chrono::milliseconds min_query_runtime_,
+            bool squash_partial_query_results_);
 
         friend class QueryCache; /// for createWriter()
     };
@@ -136,7 +138,7 @@ public:
     void updateConfiguration(const Poco::Util::AbstractConfiguration & config);
 
     Reader createReader(const Key & key);
-    Writer createWriter(const Key & key, std::chrono::milliseconds min_query_runtime);
+    Writer createWriter(const Key & key, std::chrono::milliseconds min_query_runtime, bool squash_partial_query_results);
 
     void reset();
 

@@ -168,12 +168,14 @@ bool QueryCache::IsStale::operator()(const Key & key) const
 
 QueryCache::Writer::Writer(Cache & cache_, const Key & key_,
     size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_,
-    std::chrono::milliseconds min_query_runtime_)
+    std::chrono::milliseconds min_query_runtime_,
+    bool squash_partial_query_results_)
     : cache(cache_)
     , key(key_)
     , max_entry_size_in_bytes(max_entry_size_in_bytes_)
     , max_entry_size_in_rows(max_entry_size_in_rows_)
     , min_query_runtime(min_query_runtime_)
+    , squash_partial_query_results(squash_partial_query_results_)
 {
     if (auto entry = cache.getWithKey(key); entry.has_value() && !IsStale()(entry->key))
     {
@@ -222,6 +224,24 @@ void QueryCache::Writer::finalizeWrite()
         /// same check as in ctor because a parallel Writer could have inserted the current key in the meantime
         LOG_TRACE(&Poco::Logger::get("QueryCache"), "Skipped insert (non-stale entry found), query: {}", key.queryStringFromAst());
         return;
+    }
+
+    if (squash_partial_query_results)
+    {
+        /// TODO: squash only up to max_block_size
+        auto to_single_chunk = [](const Chunks & chunks_) -> Chunk
+        {
+            if (chunks_.empty())
+                return {};
+            Chunk res = chunks_[0].clone();
+            for (size_t i = 1; i != chunks_.size(); ++i)
+                res.append(chunks_[i]);
+            return res;
+        };
+
+        Chunk query_result_as_single_chunk = to_single_chunk(*query_result);
+        query_result->clear();
+        query_result->push_back(std::move(query_result_as_single_chunk));
     }
 
     cache.set(key, query_result);
@@ -277,10 +297,10 @@ QueryCache::Reader QueryCache::createReader(const Key & key)
     return Reader(cache, key, lock);
 }
 
-QueryCache::Writer QueryCache::createWriter(const Key & key, std::chrono::milliseconds min_query_runtime)
+QueryCache::Writer QueryCache::createWriter(const Key & key, std::chrono::milliseconds min_query_runtime, bool squash_partial_query_results)
 {
     std::lock_guard lock(mutex);
-    return Writer(cache, key, max_entry_size_in_bytes, max_entry_size_in_rows, min_query_runtime);
+    return Writer(cache, key, max_entry_size_in_bytes, max_entry_size_in_rows, min_query_runtime, squash_partial_query_results);
 }
 
 void QueryCache::reset()

@@ -103,6 +103,10 @@ cached - for that use setting [query_cache_min_query_runs](settings/settings.md#
 Entries in the query cache become stale after a certain time period (time-to-live). By default, this period is 60 seconds but a different
 value can be specified at session, profile or query level using setting [query_cache_ttl](settings/settings.md#query-cache-ttl).
 
+ClickHouse reads and processes table data in a block-wise fashion. As a result, the query cache stores for each query multiple (partial)
+result blocks. While this behavior is a good default, it can be suppressed using setting
+[query_cache_squash_partial_query_results](settings/settings.md#query-cache-squash-partial-query-results).
+
 Also, results of queries with non-deterministic functions such as `rand()` and `now()` are not cached. This can be overruled using
 setting [query_cache_store_results_of_queries_with_nondeterministic_functions](settings/settings.md#query-cache-store-results-of-queries-with-nondeterministic-functions).
 

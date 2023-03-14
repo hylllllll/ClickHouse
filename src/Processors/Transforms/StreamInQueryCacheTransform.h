@@ -10,7 +10,7 @@ class StreamInQueryCacheTransform : public ISimpleTransform
 {
 public:
     StreamInQueryCacheTransform(
-        const Block & header_, QueryCachePtr cache, const QueryCache::Key & cache_key, std::chrono::milliseconds min_query_duration);
+        const Block & header_, QueryCachePtr cache, const QueryCache::Key & cache_key, std::chrono::milliseconds min_query_duration, bool concatenate_partial_query_results);
 
 protected:
     void transform(Chunk & chunk) override;
