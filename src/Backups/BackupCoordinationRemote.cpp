@@ -6,6 +6,7 @@
 #include <IO/WriteHelpers.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/escapeForFileName.h>
+#include "Backups/BackupCoordinationStageSync.h"
 #include <base/hex.h>
 #include <Backups/BackupCoordinationStage.h>
 
@@ -172,11 +173,11 @@ BackupCoordinationRemote::BackupCoordinationRemote(
     zkutil::GetZooKeeper get_zookeeper_,
     bool is_internal_)
     : keeper_settings(keeper_settings_)
+    , backup_uuid(backup_uuid_)
     , root_zookeeper_path(root_zookeeper_path_)
     , zookeeper_path(root_zookeeper_path_ + "/backup-" + backup_uuid_)
-    , backup_uuid(backup_uuid_)
     , get_zookeeper(get_zookeeper_)
-    , is_internal(backup_settings.internal)
+    , is_internal(is_internal_)
 {
     zookeeper_retries_info = ZooKeeperRetriesInfo(
         "BackupCoordinationRemote",
@@ -185,11 +186,9 @@ BackupCoordinationRemote::BackupCoordinationRemote(
         keeper_settings.keeper_retry_initial_backoff_ms,
         keeper_settings.keeper_retry_max_backoff_ms);
 
-    settings.root_zookeeper_path = zookeeper_path;
-
     createRootNodes();
     stage_sync.emplace(
-        settings, [this] { return getZooKeeper(); }, &Poco::Logger::get("BackupCoordination"));
+        BackupCoordinationStageSync::CoordinationSettings{}, [this] { return getZooKeeper(); }, &Poco::Logger::get("BackupCoordination"));
 }
 
 BackupCoordinationRemote::~BackupCoordinationRemote()
