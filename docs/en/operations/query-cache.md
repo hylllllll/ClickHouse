@@ -103,6 +103,9 @@ cached - for that use setting [query_cache_min_query_runs](settings/settings.md#
 Entries in the query cache become stale after a certain time period (time-to-live). By default, this period is 60 seconds but a different
 value can be specified at session, profile or query level using setting [query_cache_ttl](settings/settings.md#query-cache-ttl).
 
+Entries in the query cache are compressed by default. This reduces the overall memory consumption at the cost of slower writes into / reads
+from the query cache. To disable compression, use setting [query_cache_compress_entries](settings/settings.md#query-cache-compress-entries).
+
 ClickHouse reads and processes table data in a block-wise fashion. As a result, the query cache stores for each query multiple (partial)
 result blocks. While this behavior is a good default, it can be suppressed using setting
 [query_cache_squash_partial_query_results](settings/settings.md#query-cache-squash-partial-query-results).

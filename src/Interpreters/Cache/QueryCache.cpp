@@ -122,12 +122,15 @@ ASTPtr removeQueryCacheSettings(ASTPtr ast)
 
 QueryCache::Key::Key(
     ASTPtr ast_,
-    Block header_, const std::optional<String> & username_,
-    std::chrono::time_point<std::chrono::system_clock> expires_at_)
+    Block header_,
+    const std::optional<String> & username_,
+    std::chrono::time_point<std::chrono::system_clock> expires_at_,
+    bool is_compressed_)
     : ast(removeQueryCacheSettings(ast_))
     , header(header_)
     , username(username_)
     , expires_at(expires_at_)
+    , is_compressed(is_compressed_)
 {
 }
 
@@ -153,7 +156,7 @@ size_t QueryCache::KeyHasher::operator()(const Key & key) const
     return res;
 }
 
-size_t QueryCache::QueryResultWeight::operator()(const QueryResult & chunks) const
+size_t QueryCache::QueryResultWeight::operator()(const Chunks & chunks) const
 {
     size_t res = 0;
     for (const auto & chunk : chunks)
@@ -244,6 +247,25 @@ void QueryCache::Writer::finalizeWrite()
         query_result->push_back(std::move(query_result_as_single_chunk));
     }
 
+    if (key.is_compressed)
+    {
+        const Chunks & decompressed_chunks = *query_result;
+        Chunks compressed_chunks;
+        for (const auto & decompressed_chunk : decompressed_chunks)
+        {
+            const Columns & decompressed_columns = decompressed_chunk.getColumns();
+            Columns compressed_columns;
+            for (const auto & decompressed_column : decompressed_columns)
+            {
+                auto compressed_column = decompressed_column->compress();
+                compressed_columns.push_back(compressed_column);
+            }
+            Chunk compressed_chunk(compressed_columns, decompressed_chunk.getNumRows());
+            compressed_chunks.push_back(std::move(compressed_chunk));
+        }
+        *query_result = std::move(compressed_chunks);
+    }
+
     cache.set(key, query_result);
 }
 
@@ -269,7 +291,28 @@ QueryCache::Reader::Reader(Cache & cache_, const Key & key, const std::lock_guar
         return;
     }
 
-    pipe = Pipe(std::make_shared<SourceFromChunks>(entry->key.header, entry->mapped));
+    if (!entry->key.is_compressed)
+        pipe = Pipe(std::make_shared<SourceFromChunks>(entry->key.header, entry->mapped));
+    else
+    {
+        const Chunks & compressed_chunks = *entry->mapped;
+        auto decompressed_chunks = std::make_shared<Chunks>();
+        for (const auto & compressed_chunk : compressed_chunks)
+        {
+            const Columns & compressed_chunk_columns = compressed_chunk.getColumns();
+            Columns decompressed_columns;
+            for (const auto & compressed_column : compressed_chunk_columns)
+            {
+                auto column = compressed_column->decompress();
+                decompressed_columns.push_back(column);
+            }
+            Chunk decompressed_chunk(decompressed_columns, compressed_chunk.getNumRows());
+            decompressed_chunks->push_back(std::move(decompressed_chunk));
+        }
+
+        pipe = Pipe(std::make_shared<SourceFromChunks>(entry->key.header, decompressed_chunks));
+    }
+
     LOG_TRACE(&Poco::Logger::get("QueryCache"), "Entry found for query {}", key.queryStringFromAst());
 }
 
@@ -328,7 +371,7 @@ std::vector<QueryCache::Cache::KeyMapped> QueryCache::dump() const
 }
 
 QueryCache::QueryCache()
-    : cache(std::make_unique<TTLCachePolicy<Key, QueryResult, KeyHasher, QueryResultWeight, IsStale>>())
+    : cache(std::make_unique<TTLCachePolicy<Key, Chunks, KeyHasher, QueryResultWeight, IsStale>>())
 {
 }
 

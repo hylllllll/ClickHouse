@@ -1425,6 +1425,17 @@ Possible values:
 
 Default value: `0`
 
+## query_cache_compress_entries {#query-cache-compress-entries}
+
+Compress entries in the [query cache](../query-cache.md). Lessens the memory consumption of the query cache at the cost of slower inserts into / reads from it.
+
+Possible values:
+
+- 0 - Disabled
+- 1 - Enabled
+
+Default value: `1`
+
 ## query_cache_squash_partial_query_results {#query-cache-squash-partial-query-results}
 
 Write a single concatenated block into the [query cache](../query-cache.md) for partial query results instead of multiple blocks. Lessens memory consumption of the query cache at the cost of slower inserts into it.
