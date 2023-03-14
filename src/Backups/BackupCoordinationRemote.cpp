@@ -840,31 +840,22 @@ bool BackupCoordinationRemote::hasConcurrentBackups(const std::atomic<size_t> &)
     if (!zk->exists(root_zookeeper_path))
         zk->createAncestors(root_zookeeper_path);
 
-    ZooKeeperRetriesControl retries_ctl("hasConcurrentBackups", zookeeper_retries_info);
-    retries_ctl.retryLoop([&]()
+    for (size_t attempt = 0; attempt < MAX_ZOOKEEPER_ATTEMPTS; ++attempt)
     {
-        auto zk = getZooKeeper();
-        std::string backup_stage_path = zookeeper_path +"/stage";
+        Coordination::Stat stat;
+        zk->get(root_zookeeper_path, &stat);
+        Strings existing_backup_paths = zk->getChildren(root_zookeeper_path);
 
-        if (!zk->exists(root_zookeeper_path))
-            zk->createAncestors(root_zookeeper_path);
-
-        for (size_t attempt = 0; attempt < MAX_ZOOKEEPER_ATTEMPTS; ++attempt)
+        for (const auto & existing_backup_path : existing_backup_paths)
         {
-            Coordination::Stat stat;
-            zk->get(root_zookeeper_path, &stat);
-            Strings existing_backup_paths = zk->getChildren(root_zookeeper_path);
+            if (startsWith(existing_backup_path, "restore-"))
+                continue;
 
-            for (const auto & existing_backup_path : existing_backup_paths)
-            {
-                if (startsWith(existing_backup_path, "restore-"))
-                    continue;
+            String existing_backup_uuid = existing_backup_path;
+            existing_backup_uuid.erase(0, String("backup-").size());
 
-                String existing_backup_uuid = existing_backup_path;
-                existing_backup_uuid.erase(0, String("backup-").size());
-
-                if (existing_backup_uuid == toString(backup_uuid))
-                    continue;
+            if (existing_backup_uuid == toString(backup_uuid))
+                continue;
 
             String status;
             if (zk->tryGet(root_zookeeper_path + "/" + existing_backup_path + "/stage", status))
@@ -874,10 +865,16 @@ bool BackupCoordinationRemote::hasConcurrentBackups(const std::atomic<size_t> &)
             }
         }
 
-        result = false;
-    });
+        zk->createIfNotExists(backup_stage_path, "");
+        auto code = zk->trySet(backup_stage_path, Stage::SCHEDULED_TO_START, stat.version);
+        if (code == Coordination::Error::ZOK)
+            break;
+        bool is_last_attempt = (attempt == MAX_ZOOKEEPER_ATTEMPTS - 1);
+        if ((code != Coordination::Error::ZBADVERSION) || is_last_attempt)
+            throw zkutil::KeeperException(code, backup_stage_path);
+    }
 
-    return result;
+    return false;
 }
 
 
